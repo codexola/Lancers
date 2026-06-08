@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ステータス - Lancers Auto Bid</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-left">
+        <h1>Lancers Auto Bid</h1>
+        <span class="status-badge" id="statusBadge">停止中</span>
+      </div>
+      <nav class="main-nav">
+        <a href="status.html" class="nav-link active">ステータス</a>
+        <a href="settings.html" class="nav-link">設定</a>
+      </nav>
+      <div class="header-actions">
+        <button class="btn btn-success" id="startBtn">開始</button>
+        <button class="btn btn-danger" id="stopBtn">停止</button>
+        <button class="btn btn-secondary" id="exportBtn">JSONエクスポート</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="panel runtime-panel">
+        <div class="terminal-header">
+          <h2>リアルタイムステータス</h2>
+          <button class="btn btn-sm btn-terminal-clear" id="clearLogBtn" title="表示のみクリア（DBには保存）">ログクリア</button>
+        </div>
+        <div class="cmd-terminal" id="cmdTerminal">
+          <div class="cmd-line cmd-status-line" id="runtimeLine">
+            <span class="cmd-prompt">C:\Lancers&gt;</span>
+            <span class="cmd-status-text">
+              <span class="runtime-phase" id="runtimePhase">待機中</span>
+              <span class="cmd-sep">—</span>
+              <span class="runtime-message" id="runtimeMessage">—</span>
+            </span>
+          </div>
+          <div class="cmd-log" id="activityLog">
+            <div class="cmd-line cmd-empty">アクティビティログはここに表示されます</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel connection-panel">
+        <h2>接続ステータス</h2>
+        <div class="connection-grid">
+          <div class="connection-item" id="connLancers">
+            <span class="connection-light"></span>
+            <div class="connection-info">
+              <span class="connection-label">Lancers アカウント</span>
+              <span class="connection-status-text">確認中...</span>
+            </div>
+          </div>
+          <div class="connection-item" id="connClaude">
+            <span class="connection-light"></span>
+            <div class="connection-info">
+              <span class="connection-label">Claude API Key</span>
+              <span class="connection-status-text">確認中...</span>
+            </div>
+          </div>
+          <div class="connection-item" id="connOpenai">
+            <span class="connection-light"></span>
+            <div class="connection-info">
+              <span class="connection-label">OpenAI API Key</span>
+              <span class="connection-status-text">確認中...</span>
+            </div>
+          </div>
+        </div>
+        <div class="poll-error" id="pollError" hidden></div>
+        <button class="btn btn-secondary btn-sm" id="refreshConnBtn">接続を再確認</button>
+      </section>
+
+      <section class="panel stats-panel">
+        <div class="stat-card">
+          <span class="stat-value" id="totalProjects">0</span>
+          <span class="stat-label">検出案件</span>
+        </div>
+        <div class="stat-card stat-success">
+          <span class="stat-value" id="bidCount">0</span>
+          <span class="stat-label">入札済み</span>
+        </div>
+        <div class="stat-card stat-warning">
+          <span class="stat-value" id="skipCount">0</span>
+          <span class="stat-label">スキップ</span>
+        </div>
+        <div class="stat-card stat-error">
+          <span class="stat-value" id="errorCount">0</span>
+          <span class="stat-label">エラー</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value stat-small" id="lastPoll">-</span>
+          <span class="stat-label">最終ポーリング</span>
+        </div>
+      </section>
+
+      <section class="panel projects-panel">
+        <div class="panel-header">
+          <h2>案件一覧</h2>
+          <div class="filter-tabs">
+            <button class="filter-tab active" data-filter="all">すべて</button>
+            <button class="filter-tab" data-filter="detected">検出</button>
+            <button class="filter-tab" data-filter="bid_submitted">入札済み</button>
+            <button class="filter-tab" data-filter="skipped">スキップ</button>
+            <button class="filter-tab" data-filter="error">エラー</button>
+            <button class="filter-tab" data-filter="bidding">入札中</button>
+            <button class="filter-tab" data-filter="processing">処理中</button>
+          </div>
+        </div>
+        <div class="projects-list" id="projectsList">
+          <div class="empty-state">案件がまだありません。設定を確認して「開始」を押してください。</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">案件詳細</h3>
+        <button class="modal-close" id="modalClose">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <script type="module" src="status.js"></script>
+</body>
+</html>

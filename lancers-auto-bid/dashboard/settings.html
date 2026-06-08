@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>設定 - Lancers Auto Bid</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-left">
+        <h1>Lancers Auto Bid</h1>
+      </div>
+      <nav class="main-nav">
+        <a href="status.html" class="nav-link">ステータス</a>
+        <a href="settings.html" class="nav-link active">設定</a>
+      </nav>
+      <div class="header-actions">
+        <button class="btn btn-primary" id="saveAllBtn">すべて保存</button>
+      </div>
+    </header>
+
+    <main class="main settings-main">
+      <section class="panel settings-section">
+        <h2>API設定</h2>
+        <p class="section-desc">入札文生成に使用するAI APIキーを設定します。</p>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="aiProvider">AIプロバイダー（優先）</label>
+            <select id="aiProvider">
+              <option value="claude">Claude (Anthropic)</option>
+              <option value="openai">OpenAI</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="claudeApiKey">Claude API Key</label>
+            <div class="input-with-status">
+              <input type="password" id="claudeApiKey" placeholder="sk-ant-api03-..." autocomplete="off">
+              <div class="inline-connection" id="connClaude">
+                <span class="connection-light"></span>
+                <span class="connection-status-text">未確認</span>
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="openaiApiKey">OpenAI API Key</label>
+            <div class="input-with-status">
+              <input type="password" id="openaiApiKey" placeholder="sk-..." autocomplete="off">
+              <div class="inline-connection" id="connOpenai">
+                <span class="connection-light"></span>
+                <span class="connection-status-text">未確認</span>
+              </div>
+            </div>
+          </div>
+          <div class="form-group full-width">
+            <button class="btn btn-secondary" id="testClaudeBtn">Claude接続テスト</button>
+            <button class="btn btn-secondary" id="testApiBtn">すべての接続をテスト</button>
+          </div>
+          <div class="api-test-result" id="apiTestResult" hidden></div>
+        </div>
+      </section>
+
+      <section class="panel settings-section">
+        <h2>プロジェクト設定</h2>
+        <p class="section-desc">案件フィルタリングと入札生成の設定です。</p>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="maxProposalCount">初回入札後の競争閾値（提案数）</label>
+            <p class="field-hint">この件数以上の案件は初回1回のみ入札。再入札は70・90・110・120件で各1回。</p>
+            <input type="number" id="maxProposalCount" min="1" max="200" value="50">
+          </div>
+          <div class="form-group full-width">
+            <label for="bidPrompt">入札生成プロンプト</label>
+            <p class="field-hint">案件の依頼内容・広告文を反映した提案文を生成します。最大2990文字。実績リンクは案件要件に合致するもののみ自動選別されます。</p>
+            <textarea id="bidPrompt" rows="10"></textarea>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel settings-section">
+        <h2>過去の実績リンク</h2>
+        <p class="section-desc">入札文に含める候補リンクを1行に1つずつ入力してください。案件要件に合致するリンクのみ自動で選ばれます（説明付き: URL | 説明）。</p>
+        <div class="form-grid">
+          <div class="form-group full-width">
+            <label for="portfolioLinks">プロジェクトリンク</label>
+            <textarea id="portfolioLinks" class="textarea-links" rows="8"
+              placeholder="https://example.com/wordpress-lp | WordPress LP制作&#10;https://example.com/api-bot | Python API連携"></textarea>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="settings.js"></script>
+</body>
+</html>

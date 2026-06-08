@@ -1,0 +1,14 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Secrets (never commit API keys)
+.env
+.env.*
+*.pem
+
+# Local extension backup / runtime data
+**/jsonBackup

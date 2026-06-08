@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "Lancers Auto Bid",
+  "version": "1.0.0",
+  "description": "Automatically monitor Lancers.jp projects and submit AI-generated bids",
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs",
+    "scripting",
+    "notifications",
+    "cookies"
+  ],
+  "host_permissions": [
+    "https://www.lancers.jp/*",
+    "https://api.anthropic.com/*",
+    "https://api.openai.com/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Lancers Auto Bid - Open Dashboard",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_ui": {
+    "page": "dashboard/status.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.lancers.jp/*"],
+      "js": ["content/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["dashboard/*", "lib/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

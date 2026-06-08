@@ -1,0 +1,12 @@
+{
+  "exportedAt": null,
+  "settings": {
+    "isRunning": false,
+    "aiProvider": "claude",
+    "bidPrompt": "",
+    "portfolioLinks": ""
+  },
+  "projects": [],
+  "tasksLog": [],
+  "seenProjectIds": []
+}
