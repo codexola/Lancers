@@ -17,6 +17,7 @@
         <a href="settings.html" class="nav-link active">設定</a>
       </nav>
       <div class="header-actions">
+        <span class="save-indicator" id="saveIndicator">保存済み</span>
         <button class="btn btn-primary" id="saveAllBtn">すべて保存</button>
       </div>
     </header>
@@ -24,7 +25,7 @@
     <main class="main settings-main">
       <section class="panel settings-section">
         <h2>API設定</h2>
-        <p class="section-desc">入札文生成に使用するAI APIキーを設定します。</p>
+        <p class="section-desc">入札文生成に使用するAI APIキーを設定します。Claude と OpenAI の両方を設定すると、デュアルAI生成が有効になります。</p>
         <div class="form-grid">
           <div class="form-group">
             <label for="aiProvider">AIプロバイダー（優先）</label>
@@ -63,16 +64,21 @@
 
       <section class="panel settings-section">
         <h2>プロジェクト設定</h2>
-        <p class="section-desc">案件フィルタリングと入札生成の設定です。</p>
+        <p class="section-desc">案件フィルタリングと入札生成の設定です。変更は自動保存されます。</p>
         <div class="form-grid">
           <div class="form-group">
-            <label for="maxProposalCount">初回入札後の競争閾値（提案数）</label>
-            <p class="field-hint">この件数以上の案件は初回1回のみ入札。再入札は70・90・110・120件で各1回。</p>
-            <input type="number" id="maxProposalCount" min="1" max="200" value="50">
+            <label for="maxProposalCount">再入札開始閾値（提案数）</label>
+            <p class="field-hint">40件以上の案件は初回1回入札後、40・60・80・100件で各1回再入札します。</p>
+            <input type="number" id="maxProposalCount" min="1" max="200" value="40">
+          </div>
+          <div class="form-group full-width">
+            <label for="analysisPrompt">分析プロンプト（追加指示）</label>
+            <p class="field-hint">入札可否判定に追加するカスタム指示。空欄の場合はデフォルト判定を使用します。</p>
+            <textarea id="analysisPrompt" rows="4" placeholder="例: WordPress案件は積極的に入札する"></textarea>
           </div>
           <div class="form-group full-width">
             <label for="bidPrompt">入札生成プロンプト</label>
-            <p class="field-hint">案件の依頼内容・広告文を反映した提案文を生成します。最大2990文字。実績リンクは案件要件に合致するもののみ自動選別されます。</p>
+            <p class="field-hint">案件の依頼内容・広告文を反映した提案文を生成します。最大2990文字。</p>
             <textarea id="bidPrompt" rows="10"></textarea>
           </div>
         </div>
@@ -87,6 +93,36 @@
             <textarea id="portfolioLinks" class="textarea-links" rows="8"
               placeholder="https://example.com/wordpress-lp | WordPress LP制作&#10;https://example.com/api-bot | Python API連携"></textarea>
           </div>
+        </div>
+      </section>
+
+      <section class="panel settings-section">
+        <h2>サンプル入札文</h2>
+        <p class="section-desc">AIが提案文の文体・構成・フェーズ別価格のモデルとして参考にするサンプル入札を入力してください。Web案件のフェーズ別価格例もここに記載できます。</p>
+        <div class="form-grid">
+          <div class="form-group full-width">
+            <label for="sampleBids">サンプル入札データ</label>
+            <textarea id="sampleBids" class="textarea-links" rows="12" placeholder="【サンプル1: システム開発案件】
+はじめまして。ご依頼のシステム開発について...
+
+【サンプル2: Web/LP案件 — フェーズ別価格】
+フェーズ1: 要件定義・設計 — 50,000円（7日）
+フェーズ2: デザイン・コーディング — 100,000円（21日）
+フェーズ3: テスト・納品 — 30,000円（7日）
+合計: 180,000円"></textarea>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel settings-section">
+        <h2>入札フロー参考画像</h2>
+        <p class="section-desc">Lancers入札フォームの各ステップを示す参考画像です。エラー発生時にAI修復の参照として使用されます。</p>
+        <div class="reference-images">
+          <figure><img src="../docs/reference/lances1.png" alt="案件詳細ページ"><figcaption>1. 案件詳細 — 提案数・予算・提案するボタン</figcaption></figure>
+          <figure><img src="../docs/reference/lances2.png" alt="提案フォーム入力"><figcaption>2. 提案フォーム — 提案文・金額・完了予定日</figcaption></figure>
+          <figure><img src="../docs/reference/lances3.png" alt="確認ページ"><figcaption>3. 確認ページ — 最終送信</figcaption></figure>
+          <figure><img src="../docs/reference/lances4.png" alt="Web案件フェーズ別価格"><figcaption>4. Web案件 — フェーズ別価格入力</figcaption></figure>
+          <figure><img src="../docs/reference/lances5.png" alt="NDA同意・価格入力"><figcaption>5. NDA同意・契約金額入力</figcaption></figure>
         </div>
       </section>
     </main>

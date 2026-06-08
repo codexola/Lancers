@@ -12,14 +12,26 @@
       <div class="header-left">
         <h1>Lancers Auto Bid</h1>
         <span class="status-badge" id="statusBadge">停止中</span>
+        <span class="status-badge status-filter" id="filterBadge">フィルタ: 停止</span>
+        <span class="status-badge status-bid" id="bidBadge">入札: 停止</span>
       </div>
       <nav class="main-nav">
         <a href="status.html" class="nav-link active">ステータス</a>
         <a href="settings.html" class="nav-link">設定</a>
       </nav>
       <div class="header-actions">
-        <button class="btn btn-success" id="startBtn">開始</button>
-        <button class="btn btn-danger" id="stopBtn">停止</button>
+        <button class="btn btn-success" id="startAllBtn">すべて開始</button>
+        <button class="btn btn-danger" id="stopAllBtn">すべて停止</button>
+        <div class="control-group">
+          <span class="control-label">フィルタリング</span>
+          <button class="btn btn-success btn-sm" id="startFilterBtn">開始</button>
+          <button class="btn btn-danger btn-sm" id="stopFilterBtn">停止</button>
+        </div>
+        <div class="control-group">
+          <span class="control-label">入札</span>
+          <button class="btn btn-success btn-sm" id="startBidBtn">開始</button>
+          <button class="btn btn-danger btn-sm" id="stopBidBtn">停止</button>
+        </div>
         <button class="btn btn-secondary" id="exportBtn">JSONエクスポート</button>
       </div>
     </header>

@@ -84,9 +84,13 @@ export async function exportAllData() {
     exportedAt: new Date().toISOString(),
     settings: {
       isRunning: settings.isRunning,
+      isFilteringEnabled: settings.isFilteringEnabled,
+      isBiddingEnabled: settings.isBiddingEnabled,
       aiProvider: settings.aiProvider,
       bidPrompt: settings.bidPrompt,
+      analysisPrompt: settings.analysisPrompt,
       portfolioLinks: settings.portfolioLinks,
+      sampleBids: settings.sampleBids,
       maxProposalCount: settings.maxProposalCount
     },
     projects: settings.projects,

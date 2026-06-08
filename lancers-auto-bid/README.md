@@ -5,14 +5,16 @@ Automatically monitors [Lancers.jp](https://www.lancers.jp) for new system/web d
 ## Features
 
 - **Real-time monitoring** of two search URLs:
-  - System development: `https://www.lancers.jp/work/search/system?open=1`
-  - Web development: `https://www.lancers.jp/work/search/web?open=1`
+  - System development: `https://www.lancers.jp/work/search/system?open=1&ref=header_menu`
+  - Web development: `https://www.lancers.jp/work/search/web?open=1&ref=header_menu`
+- **Separate controls** for filtering (monitoring) and bidding
 - **Adaptive polling**: every 4 seconds when new projects appear, every 60 seconds during idle periods
-- **AI bid generation** via Claude (Anthropic) or OpenAI (GPT-4o)
-- **Smart filtering** excludes non-development projects (image/video/marketing/VA/adult/salon/partnership/free work)
+- **AI bid generation** via Claude (Anthropic) and/or OpenAI (dual-AI merge)
+- **Re-bidding** at proposal count milestones: 40, 60, 80, 100+
+- **Phase pricing** for Web/LP projects with multi-row price forms
 - **Automated bidding** fills proposal form, amount, completion date, NDA checkbox, and submits
-- **Dashboard** with start/stop controls, settings persistence, real-time project list, and bid detail modals
-- **JSON export** of all task data
+- **Error recovery** via Claude/OpenAI when bidding DOM issues occur
+- **Dashboard** with settings persistence, auto-save, sample bids, portfolio links
 
 ## Installation
 
@@ -27,82 +29,73 @@ Automatically monitors [Lancers.jp](https://www.lancers.jp) for new system/web d
 1. Open the dashboard (click extension icon or go to extension options)
 2. Enter your **Claude API Key** and/or **OpenAI API Key**
 3. Select your preferred AI provider
-4. Customize the bid generation prompt if needed
+4. Customize the bid generation prompt and add sample bids
 5. Add portfolio/project links (one per line) to include in bids
-6. Click **Save Settings**
-7. Click **Start** to begin monitoring
+6. Settings auto-save on change
+7. Click **フィルタリング 開始** and **入札 開始** on the status page
 
 > **Important**: You must be logged into Lancers.jp in the same browser for bidding to work.
 
-## How It Works
+## Bidding Flow (see `docs/reference/` images)
 
 ```
-Search Pages (every 4s/60s)
-    ↓
-Detect new projects
-    ↓
-Filter (exclude non-dev keywords)
-    ↓
-Scrape project details
-    ↓
-Generate bid via AI
-    ↓
-Click 提案する → Fill form → 内容を確認する → この内容で提案する
-    ↓
-Save results to dashboard + JSON
+1. Project detail page → Click 提案する
+2. Bid form → Fill 提案文, 提案金額, 完了予定日 (clear preset values first)
+   - Web projects: Fill phase-by-phase prices in 計画 section
+   - NDA checkbox if present
+3. Click 内容を確認する
+4. Confirm page → Click 提案内容を確認して提案する
+5. Success page
 ```
+
+## Re-bidding Logic
+
+| Trigger | Action |
+|---------|--------|
+| New project detected | Bid immediately |
+| No new projects | Re-bid previously bid projects at milestones |
+| 40+ proposals | Re-bid once at 40, 60, 80, 100 thresholds |
 
 ## Dashboard
 
 | Section | Description |
 |---------|-------------|
-| Start/Stop | Control monitoring (state persists across browser restarts) |
-| Settings | API keys, prompt, portfolio links |
+| Filtering Start/Stop | Control project monitoring |
+| Bidding Start/Stop | Control automated bid submission |
+| Settings | API keys, prompts, sample bids, portfolio links |
 | Stats | Total detected, bid count, skip count, errors |
 | Project List | Real-time list with status badges |
-| Modal | Click a project to view bid document or skip reason |
 
-## Project Statuses
+## Reference Images
 
-- **入札済み** (bid_submitted) - Bid successfully submitted
-- **スキップ** (skipped) - Filtered out (non-dev project)
-- **エラー** (error) - Processing or submission failed
-- **処理中** (processing) - Currently being processed
-
-## JSON Export
-
-Click **JSONエクスポート** to download all project data, task logs, and settings as a JSON file. Data is also automatically persisted in Chrome local storage.
+Stored in `docs/reference/`:
+- `lances1.png` — Project detail (budget, proposal count, 提案する button)
+- `lances2.png` — Bid form (proposal text, amount, date)
+- `lances3.png` — Confirmation page (final submit)
+- `lances4.png` — Web project phase pricing
+- `lances5.png` — NDA agreement and contract amount
 
 ## File Structure
 
 ```
 lancers-auto-bid/
 ├── manifest.json
-├── background/
-│   └── service-worker.js    # Polling orchestration & bid workflow
-├── content/
-│   └── content.js           # Page scraping & form automation
+├── background/service-worker.js
+├── content/content.js
 ├── lib/
-│   ├── constants.js         # URLs, intervals, keywords
-│   ├── filter.js            # Project filtering logic
-│   ├── ai.js                # Claude/OpenAI integration
-│   └── storage.js           # Chrome storage helpers
+│   ├── ai.js, bid-schedule.js, bid-via-tab.js
+│   ├── error-resolver.js, constants.js, storage.js
+│   └── ...
 ├── dashboard/
-│   ├── index.html
-│   ├── dashboard.css
-│   └── dashboard.js
-└── icons/
+│   ├── status.html, settings.html
+│   └── ...
+└── docs/reference/
+    └── lances1.png ... lances5.png
 ```
-
-## Filtering
-
-Projects are analyzed using **Claude or OpenAI** to distinguish development work from non-development work. For example, LP projects requiring image placement (not image production) are correctly identified as development work.
-
-Projects with **50+ existing proposals** are skipped (configurable in dashboard). Previously skipped projects are re-checked on subsequent polls.
-
-Keyword-based fallback is used only when AI analysis fails.
 
 ## Notes
 
 - **Search/filtering** runs via background fetch (no browser tabs opened)
-- **Bid submission** opens a single hidden tab only when submitting a bid
+- **Bid submission** opens a hidden tab only when submitting a bid
+- **Settings persist** across browser restarts via Chrome local storage
+- **Error recovery** uses AI + cached solutions when form automation fails

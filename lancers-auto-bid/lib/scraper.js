@@ -53,6 +53,17 @@ export function scrapeSearchResultsFromHtml(html) {
         proposalCount,
         scrapedAt: new Date().toISOString()
       });
+    } else if (id) {
+      const titleFromCtx = ctx ? (ctx[0].match(/class\s*=\s*["'][^"']*title[^"']*["'][^>]*>([^<]+)</i)?.[1] || '').trim() : '';
+      projects.push({
+        id,
+        url: `https://www.lancers.jp/work/detail/${id}`,
+        title: titleFromCtx || `案件 #${id}`,
+        budget,
+        category,
+        proposalCount,
+        scrapedAt: new Date().toISOString()
+      });
     }
   }
 

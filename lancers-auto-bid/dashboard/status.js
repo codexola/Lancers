@@ -36,6 +36,8 @@ function mergeStatusData(base, data) {
   return {
     ...base,
     isRunning: data.isRunning ?? base.isRunning,
+    isFilteringEnabled: data.isFilteringEnabled ?? base.isFilteringEnabled,
+    isBiddingEnabled: data.isBiddingEnabled ?? base.isBiddingEnabled,
     isProcessing: data.isProcessing ?? base.isProcessing,
     stopRequested: data.stopRequested ?? base.stopRequested,
     runtimeStatus: data.runtimeStatus || base.runtimeStatus,
@@ -60,7 +62,7 @@ function startRefreshLoop() {
 }
 
 function refreshUI(s) {
-  updateStatusUI(s.isRunning, s.isProcessing, s.stopRequested);
+  updateStatusUI(s);
   activeProjectId = s.runtimeStatus?.currentProjectId || null;
   updateStats(s.projects || []);
   renderProjects(s.projects || [], activeProjectId);
@@ -111,7 +113,13 @@ function renderActivityLog(tasksLog) {
   el.scrollTop = 0;
 }
 
-function updateStatusUI(isRunning, isProcessing = false, stopRequested = false) {
+function updateStatusUI(s) {
+  const isRunning = s.isRunning;
+  const isFiltering = s.isFilteringEnabled;
+  const isBidding = s.isBiddingEnabled;
+  const isProcessing = s.isProcessing;
+  const stopRequested = s.stopRequested;
+
   const badge = $('#statusBadge');
   if (stopRequested && isProcessing) {
     badge.textContent = '停止中...';
@@ -120,8 +128,19 @@ function updateStatusUI(isRunning, isProcessing = false, stopRequested = false) 
     badge.textContent = isRunning ? '実行中' : '停止中';
     badge.classList.toggle('running', isRunning);
   }
-  $('#startBtn').disabled = isRunning || (stopRequested && isProcessing);
-  $('#stopBtn').disabled = !isRunning && !isProcessing;
+
+  const filterBadge = $('#filterBadge');
+  filterBadge.textContent = `フィルタ: ${isFiltering ? '実行中' : '停止'}`;
+  filterBadge.classList.toggle('running', isFiltering);
+
+  const bidBadge = $('#bidBadge');
+  bidBadge.textContent = `入札: ${isBidding ? '実行中' : '停止'}`;
+  bidBadge.classList.toggle('running', isBidding);
+
+  $('#startFilterBtn').disabled = isFiltering;
+  $('#stopFilterBtn').disabled = !isFiltering;
+  $('#startBidBtn').disabled = isBidding;
+  $('#stopBidBtn').disabled = !isBidding && !isProcessing;
 }
 
 function updatePollError(msg) {
@@ -258,25 +277,67 @@ async function refreshAll() {
   } catch { /* background may be restarting */ }
 }
 
-$('#startBtn').addEventListener('click', async () => {
-  $('#startBtn').disabled = true;
+$('#startAllBtn').addEventListener('click', async () => {
   await sendMessage('start');
   settings.isRunning = true;
-  settings.stopRequested = false;
-  updateStatusUI(true);
-  showToast('監視を開始しました');
+  settings.isFilteringEnabled = true;
+  settings.isBiddingEnabled = true;
+  updateStatusUI(settings);
+  showToast('フィルタリング・入札を開始しました');
   setTimeout(refreshAll, 500);
 });
 
-$('#stopBtn').addEventListener('click', async () => {
-  $('#stopBtn').disabled = true;
-  updateStatusUI(false, true, true);
-  showToast('停止中... 進行中の入札を中断します');
+$('#stopAllBtn').addEventListener('click', async () => {
   await sendMessage('stop');
   settings.isRunning = false;
-  settings.stopRequested = true;
-  updateStatusUI(false);
-  showToast('監視を停止しました');
+  settings.isFilteringEnabled = false;
+  settings.isBiddingEnabled = false;
+  updateStatusUI(settings);
+  showToast('すべて停止しました');
+  refreshAll();
+});
+
+$('#startFilterBtn').addEventListener('click', async () => {
+  $('#startFilterBtn').disabled = true;
+  await sendMessage('startFiltering');
+  settings.isFilteringEnabled = true;
+  settings.isRunning = true;
+  updateStatusUI(settings);
+  showToast('フィルタリングを開始しました');
+  setTimeout(refreshAll, 500);
+});
+
+$('#stopFilterBtn').addEventListener('click', async () => {
+  $('#stopFilterBtn').disabled = true;
+  await sendMessage('stopFiltering');
+  settings.isFilteringEnabled = false;
+  if (!settings.isBiddingEnabled) settings.isRunning = false;
+  updateStatusUI(settings);
+  showToast('フィルタリングを停止しました');
+  refreshAll();
+});
+
+$('#startBidBtn').addEventListener('click', async () => {
+  $('#startBidBtn').disabled = true;
+  await sendMessage('startBidding');
+  settings.isBiddingEnabled = true;
+  settings.isFilteringEnabled = true;
+  settings.isRunning = true;
+  updateStatusUI(settings);
+  showToast('入札を開始しました');
+  setTimeout(refreshAll, 500);
+});
+
+$('#stopBidBtn').addEventListener('click', async () => {
+  $('#stopBidBtn').disabled = true;
+  updateStatusUI({ ...settings, stopRequested: true, isProcessing: true });
+  showToast('入札停止中... 進行中の処理を中断します');
+  await sendMessage('stopBidding');
+  settings.isBiddingEnabled = false;
+  settings.stopRequested = false;
+  if (!settings.isFilteringEnabled) settings.isRunning = false;
+  updateStatusUI(settings);
+  showToast('入札を停止しました');
   refreshAll();
 });
 

@@ -11,6 +11,8 @@ export const IDLE_THRESHOLD_MS = 10000;
 
 export const DEFAULT_SETTINGS = {
   isRunning: false,
+  isFilteringEnabled: false,
+  isBiddingEnabled: false,
   claudeApiKey: '',
   openaiApiKey: '',
   aiProvider: 'claude',
@@ -44,7 +46,12 @@ JSON形式で返してください：
   "experienceText": "実績欄用テキスト"
 }`,
   portfolioLinks: '',
-  maxProposalCount: 50,
+  sampleBids: `例：以下の内訳でご提案させていただきます。
+- 企画・デザイン構成＝20,000円
+- トップページ(デザイン+コーディング) =70,000円
+- 下層ページ（デザイン＋コーディング）＝15,000円×2P＝30,000円
+詳細なことはメッセージで相談できればと思っております。`,
+  maxProposalCount: 40,
   analysisPrompt: '',
   lastPollTime: null,
   lastNewProjectTime: null,
@@ -67,8 +74,8 @@ JSON形式で返してください：
   dashboardLogClearAfter: null,
   errorSolutions: {},
   errorResolutionSettings: {
-    enabled: false,
-    maxRetries: 0,
+    enabled: true,
+    maxRetries: 3,
     lookupBeforeApi: true
   },
   useDualAi: true

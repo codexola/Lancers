@@ -3,12 +3,16 @@ import {
   checkConnections, updateConnectionUI, sendMessage
 } from './common.js';
 
+let saveTimer = null;
+let isDirty = false;
+
 async function init() {
   const settings = await loadSettingsFromBg();
   populateForm(settings);
   if (settings.connectionStatus) {
     updateConnectionUI(settings.connectionStatus);
   }
+  setupAutoSave();
 }
 
 function populateForm(s) {
@@ -16,8 +20,10 @@ function populateForm(s) {
   $('#claudeApiKey').value = s.claudeApiKey || '';
   $('#openaiApiKey').value = s.openaiApiKey || '';
   $('#bidPrompt').value = s.bidPrompt || '';
+  $('#analysisPrompt').value = s.analysisPrompt || '';
   $('#portfolioLinks').value = s.portfolioLinks || '';
-  $('#maxProposalCount').value = s.maxProposalCount || 50;
+  $('#sampleBids').value = s.sampleBids || '';
+  $('#maxProposalCount').value = s.maxProposalCount || 40;
 }
 
 function showTestResult(message, success) {
@@ -27,21 +33,74 @@ function showTestResult(message, success) {
   el.className = 'api-test-result ' + (success ? 'success' : 'error');
 }
 
-async function saveAll() {
-  const settings = {
+function updateSaveIndicator(state) {
+  const el = $('#saveIndicator');
+  if (state === 'saving') {
+    el.textContent = '保存中...';
+    el.className = 'save-indicator saving';
+  } else if (state === 'dirty') {
+    el.textContent = '未保存';
+    el.className = 'save-indicator dirty';
+  } else {
+    el.textContent = '保存済み';
+    el.className = 'save-indicator saved';
+  }
+}
+
+function collectFormSettings() {
+  return {
     aiProvider: $('#aiProvider').value,
     claudeApiKey: $('#claudeApiKey').value.trim(),
     openaiApiKey: $('#openaiApiKey').value.trim(),
     bidPrompt: $('#bidPrompt').value,
+    analysisPrompt: $('#analysisPrompt').value,
     portfolioLinks: $('#portfolioLinks').value,
-    maxProposalCount: parseInt($('#maxProposalCount').value, 10) || 50
+    sampleBids: $('#sampleBids').value,
+    maxProposalCount: parseInt($('#maxProposalCount').value, 10) || 40
   };
+}
+
+async function saveAll() {
+  updateSaveIndicator('saving');
+  const settings = collectFormSettings();
   await saveSettingsToBg(settings);
-  showToast('設定を保存しました');
+  isDirty = false;
+  updateSaveIndicator('saved');
   return settings;
 }
 
-$('#saveAllBtn').addEventListener('click', saveAll);
+function scheduleAutoSave() {
+  isDirty = true;
+  updateSaveIndicator('dirty');
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try {
+      await saveAll();
+      showToast('設定を自動保存しました');
+    } catch {
+      updateSaveIndicator('dirty');
+    }
+  }, 800);
+}
+
+function setupAutoSave() {
+  const fields = [
+    '#aiProvider', '#claudeApiKey', '#openaiApiKey',
+    '#bidPrompt', '#analysisPrompt', '#portfolioLinks',
+    '#sampleBids', '#maxProposalCount'
+  ];
+  for (const sel of fields) {
+    const el = $(sel);
+    if (!el) continue;
+    el.addEventListener('input', scheduleAutoSave);
+    el.addEventListener('change', scheduleAutoSave);
+  }
+}
+
+$('#saveAllBtn').addEventListener('click', async () => {
+  await saveAll();
+  showToast('設定を保存しました');
+});
 
 $('#testClaudeBtn').addEventListener('click', async () => {
   const key = $('#claudeApiKey').value.trim();

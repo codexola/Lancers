@@ -34,18 +34,18 @@ let lastNewProjectTime = Date.now();
 
 chrome.runtime.onInstalled.addListener(async () => {
   const settings = await getSettings();
-  if (settings.isRunning) startPolling();
+  if (settings.isRunning || settings.isFilteringEnabled) startPolling();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   const settings = await getSettings();
-  if (settings.isRunning) startPolling();
+  if (settings.isRunning || settings.isFilteringEnabled) startPolling();
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== ALARM_NAME) return;
   const settings = await getSettings();
-  if (!settings.isRunning || isStopRequested()) return;
+  if (!isMonitoringActive(settings) || isStopRequested()) return;
   try {
     await pollOnce();
   } catch (err) {
@@ -53,7 +53,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await addTaskLog({ type: 'error', message: `ポーリングエラー: ${err.message}` });
   }
   const after = await getSettings();
-  if (after.isRunning && !isStopRequested()) {
+  if (isMonitoringActive(after) && !isStopRequested()) {
     scheduleNextPoll();
   }
 });
@@ -71,15 +71,23 @@ async function handleBackgroundMessage(message) {
   switch (message.action) {
     case 'start': {
       armRun();
-      await saveSettings({ isRunning: true });
-      await updateRuntime({ phase: 'polling', message: '監視を開始しました' });
+      await saveSettings({
+        isRunning: true,
+        isFilteringEnabled: true,
+        isBiddingEnabled: true
+      });
+      await updateRuntime({ phase: 'polling', message: '監視・入札を開始しました' });
       startPolling();
-      await addTaskLog({ type: 'system', message: '自動入札を開始しました' });
+      await addTaskLog({ type: 'system', message: 'フィルタリング・入札を開始しました' });
       return { success: true };
     }
     case 'stop': {
       requestStop();
-      await saveSettings({ isRunning: false });
+      await saveSettings({
+        isRunning: false,
+        isFilteringEnabled: false,
+        isBiddingEnabled: false
+      });
       stopPolling();
       await updateRuntime({
         phase: 'idle',
@@ -87,7 +95,71 @@ async function handleBackgroundMessage(message) {
         currentProjectId: null,
         currentProjectTitle: null
       });
-      await addTaskLog({ type: 'system', message: '自動入札を停止しました（進行中の処理を中断）' });
+      await addTaskLog({ type: 'system', message: 'フィルタリング・入札を停止しました' });
+      notifyDashboardUpdate();
+      return { success: true };
+    }
+    case 'startFiltering': {
+      armRun();
+      await saveSettings({
+        isRunning: true,
+        isFilteringEnabled: true
+      });
+      await updateRuntime({ phase: 'polling', message: 'フィルタリングを開始しました' });
+      startPolling();
+      await addTaskLog({ type: 'system', message: 'フィルタリングを開始しました' });
+      return { success: true };
+    }
+    case 'stopFiltering': {
+      const current = await getSettings();
+      const biddingStillOn = current.isBiddingEnabled;
+      await saveSettings({
+        isFilteringEnabled: false,
+        isRunning: biddingStillOn
+      });
+      if (!biddingStillOn) {
+        requestStop();
+        stopPolling();
+        await updateRuntime({ phase: 'idle', message: 'フィルタリングを停止しました' });
+      } else {
+        await updateRuntime({ phase: 'polling', message: 'フィルタリング停止 — 入札のみ継続' });
+      }
+      await addTaskLog({ type: 'system', message: 'フィルタリングを停止しました' });
+      notifyDashboardUpdate();
+      return { success: true };
+    }
+    case 'startBidding': {
+      armRun();
+      await saveSettings({
+        isRunning: true,
+        isBiddingEnabled: true,
+        isFilteringEnabled: true
+      });
+      await updateRuntime({ phase: 'polling', message: '入札を開始しました' });
+      startPolling();
+      await addTaskLog({ type: 'system', message: '入札を開始しました' });
+      return { success: true };
+    }
+    case 'stopBidding': {
+      requestStop();
+      const current = await getSettings();
+      const filteringStillOn = current.isFilteringEnabled;
+      await saveSettings({
+        isBiddingEnabled: false,
+        isRunning: filteringStillOn
+      });
+      if (!filteringStillOn) {
+        stopPolling();
+        await updateRuntime({
+          phase: 'idle',
+          message: '入札を停止しました',
+          currentProjectId: null,
+          currentProjectTitle: null
+        });
+      } else {
+        await updateRuntime({ phase: 'polling', message: '入札停止 — フィルタリングのみ継続' });
+      }
+      await addTaskLog({ type: 'system', message: '入札を停止しました（進行中の処理を中断）' });
       notifyDashboardUpdate();
       return { success: true };
     }
@@ -99,6 +171,8 @@ async function handleBackgroundMessage(message) {
       );
       return {
         isRunning: settings.isRunning,
+        isFilteringEnabled: settings.isFilteringEnabled,
+        isBiddingEnabled: settings.isBiddingEnabled,
         isProcessing,
         stopRequested: isStopRequested(),
         projectCount: settings.projects.length,
@@ -158,6 +232,10 @@ async function handleBackgroundMessage(message) {
   }
 }
 
+function isMonitoringActive(settings) {
+  return settings.isRunning || settings.isFilteringEnabled || settings.isBiddingEnabled;
+}
+
 function startPolling() {
   stopPolling();
   armRun();
@@ -165,7 +243,7 @@ function startPolling() {
     if (err?.name !== 'StopError') console.error(err);
   });
   getSettings().then(s => {
-    if (s.isRunning && !isStopRequested()) scheduleNextPoll(500);
+    if (isMonitoringActive(s) && !isStopRequested()) scheduleNextPoll(500);
   });
 }
 
@@ -193,7 +271,7 @@ function getSearchSource(url) {
 
 async function pollOnce() {
   const settings = await getSettings();
-  if (!settings.isRunning || isStopRequested()) return;
+  if (!isMonitoringActive(settings) || isStopRequested()) return;
 
   await updateRuntime({ phase: 'polling', message: '案件を検索中...' });
   await saveSettings({ lastPollTime: new Date().toISOString() });
@@ -254,8 +332,13 @@ async function pollOnce() {
   notifyDashboardUpdate();
 
   const freshSettings = await getSettings();
-  if (!freshSettings.isRunning || isStopRequested()) {
+  if (!isMonitoringActive(freshSettings) || isStopRequested()) {
     await updateRuntime({ phase: 'idle', message: '停止しました' });
+    return;
+  }
+
+  if (!freshSettings.isBiddingEnabled) {
+    await updateRuntime({ phase: 'idle', message: 'フィルタリングのみ — 入札は停止中' });
     return;
   }
 
@@ -264,8 +347,52 @@ async function pollOnce() {
     return shouldProcessProject(p, freshSettings);
   });
 
+  for (const stored of freshSettings.projects) {
+    if (processingIds.has(stored.id)) continue;
+    if (toProcess.some(p => p.id === stored.id)) continue;
+    if (!['detected', 'error'].includes(stored.status)) continue;
+    if (shouldProcessProject(stored, freshSettings)) {
+      toProcess.push({
+        id: stored.id,
+        url: stored.url || `https://www.lancers.jp/work/detail/${stored.id}`,
+        title: stored.title,
+        budget: stored.budget,
+        proposalCount: stored.proposalCount,
+        searchSource: stored.searchSource,
+        category: stored.category
+      });
+    }
+  }
+
+  for (const stored of freshSettings.projects) {
+    if (processingIds.has(stored.id)) continue;
+    if (toProcess.some(p => p.id === stored.id)) continue;
+    if (stored.bidSubmitted && shouldProcessProject(
+      { id: stored.id, proposalCount: stored.proposalCount },
+      freshSettings
+    )) {
+      const fromSearch = allProjects.find(p => p.id === stored.id);
+      toProcess.push(fromSearch || {
+        id: stored.id,
+        url: stored.url || `https://www.lancers.jp/work/detail/${stored.id}`,
+        title: stored.title,
+        budget: stored.budget,
+        proposalCount: stored.proposalCount ?? fromSearch?.proposalCount,
+        searchSource: stored.searchSource,
+        category: stored.category
+      });
+    }
+  }
+
   if (toProcess.length === 0) {
-    await updateRuntime({ phase: 'idle', message: '新規案件なし — 監視継続中' });
+    const rebidCandidates = freshSettings.projects.filter(p => {
+      if (processingIds.has(p.id)) return false;
+      return shouldProcessProject({ id: p.id, proposalCount: p.proposalCount }, freshSettings);
+    });
+    const msg = rebidCandidates.length > 0
+      ? `処理待ち ${rebidCandidates.length}件 — 次のポーリングで入札`
+      : '新規案件なし — 監視継続中';
+    await updateRuntime({ phase: 'idle', message: msg });
     return;
   }
 
@@ -452,7 +579,9 @@ async function processNewProject(project, eligibility = {}) {
       proposalText: aiResult.proposalText,
       bidAmount: aiResult.bidAmount,
       completionDate: aiResult.completionDate,
-      experienceText: aiResult.experienceText
+      experienceText: aiResult.experienceText,
+      phases: aiResult.phases,
+      estimateDetail: aiResult.estimateDetail
     }, settings);
 
     const elapsed = Date.now() - bidStartTime;

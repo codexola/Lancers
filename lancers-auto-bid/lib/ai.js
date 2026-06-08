@@ -50,6 +50,23 @@ function buildPrompt(project, settings, relevantLinks, allEntries, bidFormat) {
     ? relevantLinks.map(l => `- ${l}`).join('\n')
     : '（この案件に合致する実績リンクなし — リンクは記載しない）';
 
+  const sampleSection = (settings.sampleBids || '').trim()
+    ? settings.sampleBids.trim()
+    : '（設定なし — 一般的な提案文のトーンで作成）';
+
+  const isWebProject = project.searchSource === 'web' ||
+    /web|lp|ランディング|デザイン|サイト制作/i.test(`${project.title} ${project.category || ''}`);
+
+  const phaseSection = isWebProject ? `
+## Web案件のフェーズ別価格（必須 — 計画セクション用）
+この案件はWeb/LP案件の可能性があります。提案フォームにフェーズ別価格入力欄がある場合に備え、
+サンプル入札データの構成を参考にフェーズ別の内訳を生成してください。
+- phases: 2〜4フェーズ（例: 要件定義・デザイン・コーディング・テスト納品）
+- 各フェーズの amount（税抜）の合計 = bidAmount
+- 各フェーズの completionDays は累積日数
+- サンプル入札の文体・フェーズ構成を参考にすること
+` : '';
+
   return `あなたはランサーズ案件の分析・入札文生成AIです。
 
 ${ANALYSIS_RULES}
@@ -88,6 +105,12 @@ ${useSection}
 
 ---
 
+## サンプル入札文（参考 — 文体・構成・フェーズ価格のモデルとして使用）
+${sampleSection}
+
+${phaseSection}
+---
+
 ## 出力要件
 - JSONのみ返答（Markdownや説明文は不要）
 - proposalText は **${MAX_PROPOSAL_TEXT_LENGTH}文字以内**（${MAX_PROPOSAL_TEXT_LENGTH}文字を絶対に超えない）
@@ -98,6 +121,9 @@ ${useSection}
 - 合致する実績リンクがない場合はリンクセクションを省略する
 - bidAmount: 予算範囲内の妥当な税抜金額
 - completionDays: 現実的な完了日数
+- phases: Web案件向けフェーズ別価格配列（任意 — Web/LP案件では必須）
+  [{ "title": "フェーズ名", "amount": 数値, "completionDays": 数値 }, ...]
+- estimateDetail: Web案件の「見積もりの詳細」欄用テキスト（Web案件では必須。サンプル入札と同じ内訳形式）
 - shouldBidがfalseの場合、proposalTextは空文字
 
 {
@@ -107,7 +133,9 @@ ${useSection}
   "proposalText": "提案文",
   "bidAmount": 数値,
   "completionDays": 数値,
-  "experienceText": "実績欄用テキスト"
+  "experienceText": "実績欄用テキスト",
+  "phases": [{"title": "フェーズ名", "amount": 数値, "completionDays": 数値}],
+  "estimateDetail": "見積もりの詳細（Web案件用）"
 }`;
 }
 
@@ -395,6 +423,9 @@ function parseCombinedResponse(text, project, relevantLinks, preCheck, bidFormat
     experienceText = experienceText.substring(0, MAX_PROPOSAL_TEXT_LENGTH);
   }
 
+  const phases = normalizePhases(parsed?.phases, bidAmount, projectSize, project);
+  const estimateDetail = parsed?.estimateDetail || buildEstimateDetail(phases, bidAmount, project);
+
   return {
     shouldBid: true,
     reason: parsed?.reason || preCheck.reason || 'AI分析: 開発案件と判定',
@@ -405,8 +436,58 @@ function parseCombinedResponse(text, project, relevantLinks, preCheck, bidFormat
     experienceText,
     portfolioLinksUsed: relevantLinks,
     bidFormatId: bidFormat?.id,
-    bidFormatName: bidFormat?.name
+    bidFormatName: bidFormat?.name,
+    phases,
+    estimateDetail
   };
+}
+
+function buildEstimateDetail(phases, totalAmount, project) {
+  const isWeb = project.searchSource === 'web' ||
+    /web|lp|ランディング|デザイン|サイト/i.test(`${project.title} ${project.category || ''}`);
+  if (!isWeb) return '';
+
+  if (phases?.length) {
+    const lines = phases.map(p => `- ${p.title}＝${p.amount.toLocaleString()}円`);
+    return `例：以下の内訳でご提案させていただきます。\n${lines.join('\n')}\n詳細なことはメッセージで相談できればと思っております。`;
+  }
+
+  return `例：以下の内訳でご提案させていただきます。\n- 企画・デザイン構成＝${Math.round(totalAmount * 0.2).toLocaleString()}円\n- 実装・コーディング＝${Math.round(totalAmount * 0.6).toLocaleString()}円\n- テスト・納品＝${Math.round(totalAmount * 0.2).toLocaleString()}円\n詳細なことはメッセージで相談できればと思っております。`;
+}
+
+function normalizePhases(rawPhases, totalAmount, projectSize, project) {
+  if (!Array.isArray(rawPhases) || rawPhases.length === 0) {
+    const isWeb = project.searchSource === 'web' ||
+      /web|lp|ランディング|デザイン|サイト/i.test(`${project.title} ${project.category || ''}`);
+    if (!isWeb) return null;
+
+    const count = projectSize === 'large' ? 4 : projectSize === 'small' ? 2 : 3;
+    const templates = [
+      { title: '要件定義・設計', ratio: 0.2 },
+      { title: 'デザイン・UI制作', ratio: 0.3 },
+      { title: 'コーディング・実装', ratio: 0.35 },
+      { title: 'テスト・納品', ratio: 0.15 }
+    ].slice(0, count);
+
+    const daysPerPhase = projectSize === 'large' ? [7, 14, 21, 7] : projectSize === 'small' ? [7, 14] : [7, 14, 14];
+    let remaining = totalAmount;
+    return templates.map((t, i) => {
+      const isLast = i === templates.length - 1;
+      const amount = isLast ? remaining : Math.round(totalAmount * t.ratio / 1000) * 1000;
+      remaining -= amount;
+      return {
+        title: t.title,
+        amount: Math.max(1000, amount),
+        completionDays: daysPerPhase[i] || 14
+      };
+    });
+  }
+
+  return rawPhases.map(p => ({
+    title: String(p.title || '作業フェーズ').substring(0, 100),
+    amount: Math.max(1000, Math.round(Number(p.amount) || 0)),
+    completionDays: Math.max(1, Math.round(Number(p.completionDays) || 14))
+  }));
 }
 
 function buildFallbackBid(project, relevantLinks, preCheck, bidFormat) {

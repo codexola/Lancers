@@ -87,9 +87,14 @@ export async function verifyTabOnProject(tabId, projectUrl) {
   try {
     const tab = await chrome.tabs.get(tabId);
     const expectedId = normalizeProjectUrl(projectUrl).match(/detail\/(\d+)/)?.[1];
-    const actualId = (tab.url || '').match(/detail\/(\d+)/)?.[1]
-      || (tab.url || '').match(/propose\/(\d+)/)?.[1];
-    return !expectedId || expectedId === actualId;
+    const url = tab.url || '';
+    const actualId = url.match(/detail\/(\d+)/)?.[1]
+      || url.match(/propose\/(\d+)/)?.[1]
+      || url.match(/proposal\/(\d+)/)?.[1]
+      || url.match(/[?&]id=(\d+)/)?.[1];
+    if (!expectedId) return true;
+    if (!actualId) return url.includes('lancers.jp');
+    return expectedId === actualId;
   } catch {
     return false;
   }

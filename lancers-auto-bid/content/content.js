@@ -1,5 +1,14 @@
 const MAX_PROPOSAL_CHARS = 2990;
 
+/** Lancers React 提案フォームのセレクタ */
+const FORM_SELECTORS = {
+  proposal: '.js-proposal-description, textarea.js-proposal-description, [class*="js-proposal-description"]',
+  price: '[class*="css-9bh7w2"] input, [class*="css-9bh7w2"], input[class*="css-9bh7w2"]',
+  datepicker: '.react-datepicker__input-container input, .react-datepicker-wrapper input, [class*="react-datepicker"] input',
+  datepickerLoop: '.react-datepicker__tab-loop',
+  estimateDetail: null
+};
+
 const LancersScraper = {
   isSearchPage() {
     return window.location.pathname.includes('/work/search/');
@@ -14,10 +23,11 @@ const LancersScraper = {
     if (this.isConfirmPage()) return false;
     if (/\/propose/i.test(window.location.pathname)) return true;
     if (/\/work\/detail\/\d+\/proposal/.test(window.location.pathname)) return true;
+    if (document.querySelector(FORM_SELECTORS.proposal)) return true;
     if (document.querySelector('textarea') && findButtonByText(['内容を確認する', '内容を確認'])) {
       return true;
     }
-    return !!findFieldByLabel(['提案文', '提案金額', '契約金額', '完了予定日', '提案の具体']);
+    return !!findFieldByLabel(['提案文', '提案金額', '契約金額', '完了予定日', '提案の具体', '見積もりの詳細']);
   },
 
   isConfirmPage() {
@@ -145,8 +155,15 @@ const LancersScraper = {
     };
   },
 
-  /** 黒枠: 案件詳細ページの「提案する」ボタン */
+  /** 案件詳細ページの「提案する」ボタン */
   findProposeButton() {
+    const proposeLinks = [...document.querySelectorAll('a[href*="propose"], a[href*="proposal"]')]
+      .filter(isVisible);
+    for (const a of proposeLinks) {
+      const text = normalizeText(a.textContent || '');
+      if (text.includes('提案する')) return a;
+    }
+
     const visible = [...document.querySelectorAll('a, button, [role="button"]')]
       .filter(el => isVisible(el));
 
@@ -172,25 +189,39 @@ const LancersScraper = {
   },
 
   async fillBidForm(bidData) {
-    await sleep(300);
+    await sleep(500);
     await checkNdaAgreement();
-    await sleep(200);
+    await sleep(300);
 
     const proposalFilled = await fillProposalText(bidData.proposalText);
-    await sleep(200);
+    await sleep(300);
 
     if (bidData.experienceText) {
       await fillExperienceText(bidData.experienceText);
-      await sleep(100);
+      await sleep(150);
     }
 
-    const amountFilled = await fillBidAmount(bidData.bidAmount);
+    if (bidData.estimateDetail) {
+      await fillEstimateDetail(bidData.estimateDetail);
+      await sleep(200);
+    }
+
+    await handleAiUtilizationCheckbox(bidData);
     await sleep(200);
 
-    await fillCompletionDate(bidData.completionDate);
+    const amountFilled = await fillBidAmount(bidData.bidAmount);
     await sleep(300);
 
-    return { proposalFilled, amountFilled };
+    await fillCompletionDate(bidData.completionDate);
+    await sleep(400);
+
+    const hasPhaseForm = detectPhasePricingForm();
+    if (hasPhaseForm && bidData.phases?.length) {
+      await fillPhasePricing(bidData.phases, bidData.completionDate);
+      await sleep(300);
+    }
+
+    return { proposalFilled, amountFilled, hasPhaseForm };
   },
 
   /** 黒枠: フォームページ「内容を確認する」 */
@@ -240,9 +271,10 @@ const LancersScraper = {
       url: window.location.href,
       buttons,
       hasTextarea: !!document.querySelector('textarea'),
-      hasProposalField: !!findFieldByLabel(['提案文', '提案の具体', '提案内容']),
-      hasAmountField: !!findFieldByLabel(['提案金額', '契約金額', '税抜']),
-      hasDateField: !!findFieldByLabel(['完了予定日', '納期', '完了予定']),
+      hasProposalField: !!findProposalField(),
+      hasAmountField: !!findPriceField(),
+      hasDateField: !!findDatepickerInput(),
+      hasEstimateDetail: !!findEstimateDetailField(),
       ndaUnchecked
     };
   },
@@ -319,14 +351,14 @@ const LancersScraper = {
       clickElement(btn);
 
       const formReady = await waitForCondition(
-        () => this.isBidFormPage(),
-        Math.min(12000, deadline - Date.now()),
-        300
+        () => this.isBidFormPage() || !!document.querySelector(FORM_SELECTORS.proposal),
+        Math.min(18000, deadline - Date.now()),
+        400
       );
       if (!formReady) {
         return this.failResult('提案フォームの読み込みタイムアウト', 'FORM_LOAD_TIMEOUT');
       }
-      await sleep(1000);
+      await sleep(2000);
     }
 
     // Step 2: 提案フォーム入力 → 「内容を確認する」
@@ -380,37 +412,119 @@ const LancersScraper = {
   }
 };
 
-/** 赤枠: 秘密保持契約チェックボックス */
+/** 秘密保持契約チェックボックス（ある場合のみ） */
 async function checkNdaAgreement() {
   const checkboxes = document.querySelectorAll('input[type="checkbox"]');
   for (const cb of checkboxes) {
     const ctx = getFieldContext(cb);
-    if (/秘密保持|NDA|機密保持|同意/.test(ctx) && !cb.checked) {
+    const label = findCheckboxLabel(cb);
+    const labelText = label?.textContent || ctx;
+    if (/秘密保持契約書の内容を確認した上で同意|秘密保持契約|NDA|機密保持/.test(labelText) && !cb.checked) {
       clickElement(cb);
-      await sleep(100);
+      await sleep(150);
     }
   }
 }
 
-/** 赤枠: 提案文テキストエリア — 既存の案内文・定型文をすべて削除してからAPI生成文のみ入力 */
+function findCheckboxLabel(cb) {
+  if (cb.id) {
+    const label = document.querySelector(`label[for="${cb.id}"]`);
+    if (label) return label;
+  }
+  return cb.closest('label') || cb.parentElement?.querySelector('label');
+}
+
+/** 提案文: .js-proposal-description — 既存テキストを全削除してAPI生成文を入力 */
 async function fillProposalText(text) {
   const cleanText = String(text || '').substring(0, MAX_PROPOSAL_CHARS);
   if (!cleanText) return false;
 
-  const byLabel = findFieldByLabel(['提案文', '提案の具体', '提案したい内容', '提案内容']);
-  if (byLabel && byLabel.tagName === 'TEXTAREA') {
-    return clearAndSetTextarea(byLabel, cleanText);
+  const field = findProposalField();
+  if (!field) {
+    const byLabel = findFieldByLabel(['提案文', '提案の具体', '提案したい内容', '提案内容']);
+    if (byLabel) return await setFieldValue(byLabel, cleanText);
+    return false;
   }
 
+  return await setFieldValue(field, cleanText);
+}
+
+function findProposalField() {
+  for (const sel of FORM_SELECTORS.proposal.split(', ')) {
+    const el = document.querySelector(sel.trim());
+    if (el && isVisible(el)) return el;
+  }
+  return null;
+}
+
+/** 見積もりの詳細（Web案件）— 既存テキストを全削除してAPI生成文を入力 */
+async function fillEstimateDetail(text) {
+  const detail = String(text || '').trim();
+  if (!detail) return false;
+
+  const field = findEstimateDetailField();
+  if (!field) return false;
+
+  return await setFieldValue(field, detail.substring(0, MAX_PROPOSAL_CHARS));
+}
+
+function findEstimateDetailField() {
+  const byLabel = findFieldByLabel(['見積もりの詳細', '見積もり詳細', '見積詳細', '見積内訳']);
+  if (byLabel) return byLabel;
+
   const textareas = [...document.querySelectorAll('textarea')]
-    .filter(isVisible)
-    .sort((a, b) => (b.offsetHeight * b.offsetWidth) - (a.offsetHeight * a.offsetWidth));
+    .filter(el => isVisible(el) && !el.classList.contains('js-proposal-description') &&
+      !el.matches(FORM_SELECTORS.proposal));
 
   for (const ta of textareas) {
     const ctx = getFieldContext(ta);
-    if (/定型文|テンプレ|template/i.test(ctx) && textareas.length > 1) continue;
-    if (await clearAndSetTextarea(ta, cleanText)) return true;
+    if (/見積|内訳|詳細/.test(ctx)) return ta;
   }
+  return null;
+}
+
+/** 生成AI必須チェックボックス — 案件内容に応じて選択 */
+async function handleAiUtilizationCheckbox(bidData) {
+  const projectText = `${bidData.proposalText || ''}`;
+  const needsAi = /ai|生成ai|chatgpt|claude|gemini|openai|人工知能|機械学習/i.test(projectText);
+
+  for (const cb of document.querySelectorAll('input[type="checkbox"]')) {
+    const label = findCheckboxLabel(cb);
+    const labelText = (label?.textContent || getFieldContext(cb));
+    if (!/生成AI|AI活用|AI利用|AI必須|ai.*利用/i.test(labelText)) continue;
+
+    const isRequired = /必須|同意/.test(labelText);
+    if (isRequired || needsAi) {
+      if (!cb.checked) {
+        clickElement(cb);
+        await sleep(100);
+      }
+    }
+  }
+}
+
+/** テキストエリア / contenteditable / React input 共通の値設定 */
+async function setFieldValue(element, text) {
+  if (!element) return false;
+
+  element.focus();
+  await sleep(100);
+
+  if (element.isContentEditable || element.getAttribute('contenteditable') === 'true') {
+    element.textContent = '';
+    element.innerHTML = '';
+    await sleep(50);
+    element.textContent = text;
+    element.dispatchEvent(new InputEvent('input', { bubbles: true, data: text }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(100);
+    return (element.textContent || '').includes(text.substring(0, 40));
+  }
+
+  if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') {
+    return await clearAndSetTextarea(element, text);
+  }
+
   return false;
 }
 
@@ -469,66 +583,275 @@ async function fillExperienceText(text) {
   }
 }
 
-/** 赤枠: 提案金額（税抜）/ 契約金額（税抜） */
+/** Web案件: 計画セクションのフェーズ別価格フォームを検出 */
+function detectPhasePricingForm() {
+  const planSection = findSectionByHeading(['計画', '支払い計画', 'フェーズ', '工程']);
+  if (!planSection) return false;
+
+  const amountInputs = [...planSection.querySelectorAll('input[type="text"], input[type="number"], input[type="tel"], input:not([type])')]
+    .filter(el => isVisible(el) && /金額|報酬|price|amount|税抜|単価/.test(getFieldContext(el)));
+
+  return amountInputs.length >= 2;
+}
+
+function findSectionByHeading(keywords) {
+  for (const heading of document.querySelectorAll('h2, h3, h4, legend, .section-title, [class*="heading"]')) {
+    const text = heading.textContent || '';
+    if (!keywords.some(kw => text.includes(kw))) continue;
+    const section = heading.closest('section, fieldset, div[class*="section"], div[class*="plan"]') ||
+      heading.parentElement?.parentElement;
+    if (section) return section;
+  }
+  return null;
+}
+
+/** フェーズ別価格入力 — 既存のプリセット値をすべて削除してからAPI生成値を入力 */
+async function fillPhasePricing(phases, fallbackDate) {
+  const planSection = findSectionByHeading(['計画', '支払い計画', 'フェーズ', '工程']) || document.body;
+
+  const rows = findPhaseRows(planSection);
+  if (rows.length === 0) return false;
+
+  let filled = 0;
+  for (let i = 0; i < phases.length; i++) {
+    const phase = phases[i];
+    const row = rows[i] || rows[rows.length - 1];
+
+    if (row.titleInput) {
+      setInputValue(row.titleInput, '');
+      await sleep(50);
+      setInputValue(row.titleInput, phase.title);
+    }
+
+    if (row.amountInput) {
+      setInputValue(row.amountInput, '');
+      await sleep(50);
+      setInputValue(row.amountInput, String(phase.amount).replace(/,/g, ''));
+    }
+
+    if (row.dateInput) {
+      const date = fallbackDate instanceof Date ? fallbackDate : new Date(fallbackDate);
+      if (phase.completionDays) {
+        date.setDate(date.getDate() - (phases[phases.length - 1].completionDays - phase.completionDays));
+      }
+      setInputValue(row.dateInput, '');
+      await sleep(50);
+      await fillCompletionDateOnInput(row.dateInput, date);
+    }
+
+    filled++;
+    await sleep(150);
+  }
+
+  return filled > 0;
+}
+
+function findPhaseRows(container) {
+  const rows = [];
+  const rowCandidates = container.querySelectorAll(
+    'tr, [class*="row"], [class*="phase"], [class*="plan-item"], li[class*="item"], div[class*="field-group"]'
+  );
+
+  for (const row of rowCandidates) {
+    const inputs = [...row.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"])')]
+      .filter(isVisible);
+    if (inputs.length < 1) continue;
+
+    const titleInput = inputs.find(inp => /title|タイトル|項目|名称|name/i.test(getFieldContext(inp))) ||
+      inputs.find(inp => inp.type === 'text' && !/金額|date|日/.test(getFieldContext(inp)));
+    const amountInput = inputs.find(inp => /金額|報酬|price|amount|税抜|単価/.test(getFieldContext(inp))) ||
+      inputs.find(inp => inp.type === 'number' || inp.type === 'tel');
+    const dateInput = inputs.find(inp => /完了|納期|予定日|date/i.test(getFieldContext(inp)));
+
+    if (amountInput) {
+      rows.push({ titleInput, amountInput, dateInput });
+    }
+  }
+
+  if (rows.length === 0) {
+    const allAmountInputs = [...container.querySelectorAll('input')]
+      .filter(el => isVisible(el) && /金額|報酬|price|amount|税抜|単価/.test(getFieldContext(el)));
+    for (const amountInput of allAmountInputs) {
+      const parent = amountInput.closest('tr, div, li, fieldset') || amountInput.parentElement;
+      const titleInput = parent?.querySelector('input[type="text"]:not([readonly])');
+      const dateInput = parent?.querySelector('input[type="date"], input[readonly]');
+      rows.push({ titleInput, amountInput, dateInput });
+    }
+  }
+
+  return rows;
+}
+
+async function fillCompletionDateOnInput(input, date) {
+  const formats = [
+    formatDate(date),
+    formatDate(date).replace(/\//g, '-'),
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  ];
+  clickElement(input);
+  await sleep(200);
+  setInputValue(input, formats[0]);
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await trySelectDateInCalendar(date);
+}
+
+/** 提案金額: [class*="css-9bh7w2"] — 既存値を削除してから入力 */
 async function fillBidAmount(amount) {
   const amountStr = String(amount).replace(/,/g, '');
 
-  const byLabel = findFieldByLabel(['提案金額', '契約金額', '税抜', '報酬']);
+  const priceField = findPriceField();
+  if (priceField) {
+    setReactInputValue(priceField, '');
+    await sleep(80);
+    setReactInputValue(priceField, amountStr);
+    return true;
+  }
+
+  const byLabel = findFieldByLabel(['提案金額', '契約金額', '税抜', '報酬', '提示金額']);
   if (byLabel && (byLabel.tagName === 'INPUT' || byLabel.tagName === 'TEXTAREA')) {
-    setInputValue(byLabel, amountStr);
+    setReactInputValue(byLabel, '');
+    await sleep(50);
+    setReactInputValue(byLabel, amountStr);
     return true;
   }
 
   for (const input of document.querySelectorAll('input[type="text"], input[type="number"], input[type="tel"], input:not([type])')) {
     if (!isVisible(input)) continue;
     const ctx = getFieldContext(input);
-    if (/金額|報酬|price|amount|税抜|契約/.test(ctx) && !/手数料|合計|fee/i.test(ctx)) {
-      setInputValue(input, amountStr);
+    if (/金額|報酬|price|amount|税抜|契約|提示/.test(ctx) && !/手数料|合計|fee/i.test(ctx)) {
+      setReactInputValue(input, '');
+      await sleep(50);
+      setReactInputValue(input, amountStr);
       return true;
     }
   }
   return false;
 }
 
-/** 赤枠: 完了予定日 */
+function findPriceField() {
+  for (const sel of FORM_SELECTORS.price.split(', ')) {
+    const el = document.querySelector(sel.trim());
+    if (!el || !isVisible(el)) continue;
+    if (el.tagName === 'INPUT') return el;
+    const inner = el.querySelector('input');
+    if (inner && isVisible(inner)) return inner;
+  }
+  return null;
+}
+
+/** 完了予定日: react-datepicker — カレンダーから日付を選択 */
 async function fillCompletionDate(date) {
   if (!date) return;
   const d = date instanceof Date ? date : new Date(date);
-  const formats = [
-    formatDate(d),
-    formatDate(d).replace(/\//g, '-'),
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  ];
+
+  const dateInput = findDatepickerInput();
+  if (dateInput) {
+    await fillReactDatepicker(dateInput, d);
+    return;
+  }
 
   const byLabel = findFieldByLabel(['完了予定日', '完了予定', '納期', '希望納期']);
-  if (byLabel) {
-    if (byLabel.tagName === 'INPUT') {
-      clickElement(byLabel);
-      await sleep(300);
-      setInputValue(byLabel, formats[0]);
-      byLabel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      await sleep(200);
+  if (byLabel && byLabel.tagName === 'INPUT') {
+    await fillReactDatepicker(byLabel, d);
+    return;
+  }
+
+  for (const input of document.querySelectorAll('input[type="date"], input[type="text"], input[readonly]')) {
+    if (!isVisible(input)) continue;
+    const ctx = getFieldContext(input);
+    if (/完了|納期|予定日|deadline|date/i.test(ctx)) {
+      await fillReactDatepicker(input, d);
       return;
     }
   }
 
-  for (const fmt of formats) {
-    for (const input of document.querySelectorAll('input[type="date"], input[type="text"], input[readonly]')) {
-      if (!isVisible(input)) continue;
-      const ctx = getFieldContext(input);
-      if (/完了|納期|予定日|deadline|date/i.test(ctx)) {
-        clickElement(input);
-        await sleep(300);
-        setInputValue(input, fmt);
-        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-        await sleep(200);
-        if (await trySelectDateInCalendar(d)) return;
-        return;
-      }
-    }
+  await trySelectDateInCalendar(d);
+}
+
+function findDatepickerInput() {
+  for (const sel of FORM_SELECTORS.datepicker.split(', ')) {
+    const el = document.querySelector(sel.trim());
+    if (el && isVisible(el)) return el;
   }
 
-  await trySelectDateInCalendar(d);
+  const loop = document.querySelector(FORM_SELECTORS.datepickerLoop);
+  if (loop) {
+    const input = loop.closest('div')?.querySelector('input') ||
+      document.querySelector('.react-datepicker-wrapper input');
+    if (input && isVisible(input)) return input;
+  }
+
+  return null;
+}
+
+async function fillReactDatepicker(input, targetDate) {
+  clickElement(input);
+  await sleep(600);
+
+  const formats = [
+    formatDate(targetDate),
+    `${targetDate.getFullYear()}/${String(targetDate.getMonth() + 1).padStart(2, '0')}/${String(targetDate.getDate()).padStart(2, '0')}`,
+    `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`
+  ];
+
+  for (const fmt of formats) {
+    setReactInputValue(input, fmt);
+    await sleep(200);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await sleep(200);
+  }
+
+  if (await selectDateInReactDatepicker(targetDate)) return;
+
+  await trySelectDateInCalendar(targetDate);
+}
+
+async function selectDateInReactDatepicker(targetDate) {
+  const day = targetDate.getDate();
+  const month = targetDate.getMonth();
+  const year = targetDate.getFullYear();
+
+  for (let i = 0; i < 24; i++) {
+    const header = document.querySelector('.react-datepicker__current-month, [class*="current-month"]');
+    const headerText = header?.textContent || document.body.textContent;
+
+    const monthYearMatch = headerText.match(/(\d{4})年\s*(\d{1,2})月/) ||
+      headerText.match(/([A-Za-z]+)\s+(\d{4})/);
+    if (monthYearMatch) {
+      let calYear, calMonth;
+      if (monthYearMatch[0].includes('年')) {
+        calYear = parseInt(monthYearMatch[1], 10);
+        calMonth = parseInt(monthYearMatch[2], 10) - 1;
+      } else {
+        calYear = parseInt(monthYearMatch[2], 10);
+        calMonth = new Date(`${monthYearMatch[1]} 1, ${calYear}`).getMonth();
+      }
+      if (calYear === year && calMonth === month) break;
+
+      const nextBtn = document.querySelector('.react-datepicker__navigation--next, [class*="navigation--next"]');
+      const prevBtn = document.querySelector('.react-datepicker__navigation--previous, [class*="navigation--previous"]');
+      const needForward = calYear < year || (calYear === year && calMonth < month);
+      const navBtn = needForward ? nextBtn : prevBtn;
+      if (navBtn) { clickElement(navBtn); await sleep(350); continue; }
+    }
+    break;
+  }
+
+  const dayEls = [...document.querySelectorAll(
+    '.react-datepicker__day:not(.react-datepicker__day--disabled):not(.react-datepicker__day--outside-month), ' +
+    '[class*="react-datepicker__day"]:not([class*="disabled"]):not([class*="outside-month"])'
+  )].filter(isVisible);
+
+  for (const el of dayEls) {
+    const t = el.textContent.trim();
+    const ariaLabel = el.getAttribute('aria-label') || '';
+    if (t === String(day) || ariaLabel.includes(`${year}`) && ariaLabel.includes(`${day}`)) {
+      clickElement(el);
+      await sleep(400);
+      return true;
+    }
+  }
+  return false;
 }
 
 async function trySelectDateInCalendar(targetDate) {
@@ -646,6 +969,11 @@ function isVisible(el) {
 }
 
 function setInputValue(element, value) {
+  setReactInputValue(element, value);
+}
+
+/** React controlled input 対応の値設定 */
+function setReactInputValue(element, value) {
   try {
     const proto = element.tagName === 'TEXTAREA'
       ? HTMLTextAreaElement.prototype
@@ -659,7 +987,7 @@ function setInputValue(element, value) {
   } catch {
     element.value = value;
   }
-  element.dispatchEvent(new Event('input', { bubbles: true }));
+  element.dispatchEvent(new InputEvent('input', { bubbles: true, data: value, inputType: 'insertText' }));
   element.dispatchEvent(new Event('change', { bubbles: true }));
   element.dispatchEvent(new Event('blur', { bubbles: true }));
 }

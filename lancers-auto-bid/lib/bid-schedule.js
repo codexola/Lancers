@@ -1,13 +1,13 @@
 /** 再入札マイルストーン（提案数がこの値以上になったら1回だけ再入札） */
-export const PROPOSAL_REBID_MILESTONES = [70, 90, 110, 120];
+export const PROPOSAL_REBID_MILESTONES = [40, 60, 80, 100];
 
-/** 50件以上の案件は初回1回のみ入札（マイルストーンまで再入札しない） */
-export const HIGH_PROPOSAL_THRESHOLD = 50;
+/** 40件以上の案件は初回1回のみ入札（次のマイルストーンまで再入札しない） */
+export const HIGH_PROPOSAL_THRESHOLD = 40;
 
 /**
  * 入札可否を判定する。
- * - 初回: 1回だけ入札（提案数50以上でもスキップしない）
- * - 再入札: 提案数が 70, 90, 110, 120 に達したときのみ各1回
+ * - 初回: 新規案件は即時入札
+ * - 再入札: 提案数が 40, 60, 80, 100 以上になったとき各1回
  */
 export function evaluateBidEligibility(project, existing) {
   const count = normalizeProposalCount(project.proposalCount ?? existing?.proposalCount);
